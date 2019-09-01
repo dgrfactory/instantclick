@@ -1,7 +1,6 @@
 /* InstantClick 3.1.0 | (C) 2014-2017 Alexandre Dieulot | http://instantclick.io/license */
 
-var instantclick
-  , InstantClick = instantclick = function(document, location, $userAgent) {
+var InstanceClass = (function(document, location, $userAgent) {
   // Internal variables
   var $currentLocationWithoutHash
     , $urlToPreload
@@ -15,7 +14,7 @@ var instantclick
     , $history = {}
     , $xhr
     , $url = false
-    , $title = false
+    , $head = false
     , $isContentTypeNotHTML
     , $areTrackedElementsDifferent
     , $body = false
@@ -123,8 +122,8 @@ var instantclick
           if ('body' in altered) {
             argumentsToApply[1] = altered.body
           }
-          if ('title' in altered) {
-            argumentsToApply[2] = altered.title
+          if ('head' in altered) {
+            argumentsToApply[2] = altered.head
           }
 
           returnValue = altered
@@ -137,12 +136,55 @@ var instantclick
     return returnValue
   }
 
-  function changePage(title, body, urlToPush, scrollPosition) {
+  function replaceHead(head) {
+    var srcMetaList = head.getElementsByTagName('meta'),
+        destMetaList = document.head.getElementsByTagName('meta'),
+        destMetaMap = {}
+    for (let i = destMetaList.length - 1; i >= 0; i--) {
+      var destMeta = destMetaList[i],
+          key = destMeta.getAttribute('name') || destMeta.getAttribute('property')
+      destMetaMap[key] = destMeta
+    }
+    for (let i = srcMetaList.length - 1; i >= 0; i--) {
+      var srcMeta = srcMetaList[i],
+          key = srcMeta.getAttribute('name') || srcMeta.getAttribute('property'),
+          destMeta = destMetaMap[key]
+      if (destMeta) destMeta.setAttribute('content', srcMeta.getAttribute('content'))
+    }
+
+    var srcLinkList = head.getElementsByTagName('link'),
+        destLinkList = document.head.getElementsByTagName('link'),
+        destLinkMap = {}, srcIconTag = null
+    for (let i = destLinkList.length - 1; i >= 0; i--) {
+      var destLink = destLinkList[i],
+          key = destLink.getAttribute('rel')
+      destLinkMap[key] = destLink
+    }
+    for (let i = srcLinkList.length - 1; i >= 0; i--) {
+      var srcLink = srcLinkList[i],
+          key = srcLink.getAttribute('rel'),
+          destLink = destLinkMap[key]
+      if (/(^| )icon($| )/.test(key)) srcIconTag = srcLink
+      else if (destLink) destLink.setAttribute('href', srcLink.getAttribute('href'))
+    }
+
+    /* Need to update icon-link tag after pushState for chrome support.
+    */
+    var destIconTag = destLinkMap.icon
+    if (srcIconTag && destIconTag) {
+      destIconTag.setAttribute('href', srcIconTag.getAttribute('href'))
+    }
+  }
+
+  function changePage(head, body, urlToPush, scrollPosition) {
     abortCurrentPageXhrs()
 
     document.documentElement.replaceChild(body, document.body)
     // We cannot just use `document.body = doc.body`, it causes Safari (tested
     // 5.1, 6.0 and Mobile 7.0) to execute script tags directly.
+
+    var titleTag = head.getElementsByTagName('title')[0]
+    var title = titleTag ? titleTag.textContent : null
 
     document.title = title
 
@@ -208,6 +250,7 @@ var instantclick
         return !element.hasAttribute('data-instant-track')
       })
 
+      replaceHead(head)
       triggerPageEvent('change', false)
     }
     else {
@@ -229,6 +272,7 @@ var instantclick
       })
 
       restoreTimers()
+      replaceHead(head)
 
       triggerPageEvent('restore')
     }
@@ -570,23 +614,23 @@ var instantclick
 
     var doc = document.implementation.createHTMLDocument('')
     doc.documentElement.innerHTML = removeNoscriptTags($xhr.responseText)
-    $title = doc.title
+    $head = doc.head
     $body = doc.body
 
-    var alteredOnReceive = triggerPageEvent('receive', $url, $body, $title)
+    var alteredOnReceive = triggerPageEvent('receive', $url, $body, $head)
     if (alteredOnReceive) {
       if ('body' in alteredOnReceive) {
         $body = alteredOnReceive.body
       }
-      if ('title' in alteredOnReceive) {
-        $title = alteredOnReceive.title
+      if ('head' in alteredOnReceive) {
+        $head = alteredOnReceive.head
       }
     }
 
     var urlWithoutHash = removeHash($url)
     $history[urlWithoutHash] = {
       body: $body,
-      title: $title,
+      head: $head,
       scrollPosition: urlWithoutHash in $history ? $history[urlWithoutHash].scrollPosition : 0
     }
 
@@ -644,7 +688,9 @@ var instantclick
     clearCurrentPageTimeouts()
     addOrRemoveWindowEventListeners('remove')
     $currentLocationWithoutHash = loc
-    changePage($history[loc].title, $history[loc].body, false, $history[loc].scrollPosition)
+
+    var hist = $history[loc]
+    changePage(hist.head, hist.body, false, hist.scrollPosition)
     addOrRemoveWindowEventListeners('add')
   }
 
@@ -745,7 +791,7 @@ var instantclick
     }
     $history[$currentLocationWithoutHash].scrollPosition = pageYOffset
     setPreloadingAsHalted()
-    changePage($title, $body, $url)
+    changePage($head, $body, $url)
   }
 
 
@@ -812,7 +858,7 @@ var instantclick
     $timers[$currentLocationWithoutHash] = {}
     $history[$currentLocationWithoutHash] = {
       body: document.body,
-      title: document.title,
+      head: document.head.cloneNode(true),
       scrollPosition: pageYOffset
     }
 
@@ -966,4 +1012,10 @@ var instantclick
     removeEvent: removeEvent
   }
 
-}(document, location, navigator.userAgent);
+})
+
+if (typeof module === 'object') {
+  module.exports = InstanceClass
+} else {
+  var InstantClick = InstanceClass(document, location, navigator.userAgent)
+}
