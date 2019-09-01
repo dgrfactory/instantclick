@@ -30,6 +30,12 @@ var LoadingIndicator = (function(instantclick) {
     document.head.appendChild(styleElement)
   }
 
+  function appendElement() {
+    // MS-Edge: document.body is null when contents not loaded yet, so defer processing
+    if (!document.body) return setTimeout(appendElement, 0)
+    else document.body.appendChild($element)
+  }
+
   function changeListener(isInitialPage) {
     if (!instantclick.supported) {
       return
@@ -39,7 +45,7 @@ var LoadingIndicator = (function(instantclick) {
       init()
     }
 
-    document.body.appendChild($element)
+    appendElement()
 
     if (!isInitialPage) {
       hide()
@@ -47,8 +53,7 @@ var LoadingIndicator = (function(instantclick) {
   }
 
   function restoreListener() {
-    document.body.appendChild($element)
-
+    appendElement()
     hide()
   }
 
